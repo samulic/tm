@@ -1,0 +1,4 @@
+20news-19997.tar.gz - Original 20 Newsgroups data set
+20news-bydate.tar.gz - 20 Newsgroups sorted by date; duplicates and some headers removed (18846 documents)
+20news-18828.tar.gz - 20 Newsgroups; duplicates removed, only "From" and "Subject" headers (18828 documents)
+
