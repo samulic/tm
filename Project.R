@@ -52,6 +52,7 @@ corpus_stopwords_removed <- tm_map(corpus_no_numbers, removeWords, stopwords("en
 corpus_contraction_fixed <- tm_map(corpus_stopwords_removed, fix.contractions)
 # (4) Mutate diacritics 
 # - how is performance if we don't take this step? English shouldn't suffer from this
+corpus_diacritics_fixed <- corpus_contraction_fixed
 #corpus_diacritics_fixed <- tm_map(corpus_contraction_fixed, fix.diacritics)
 corpus_no_punctuation <- tm_map(corpus_diacritics_fixed, removePunctuation)
 # (5) To lowercase
@@ -79,6 +80,7 @@ inspect(corpus_bigram_tfidf)
 
 corpus_bigram_tfidf_sparse_removed = removeSparseTerms(corpus_bigram_tfidf, 0.99)
 inspect(corpus_bigram_tfidf_sparse_removed)
+
 
 
 ## Word cloud
