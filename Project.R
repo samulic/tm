@@ -320,3 +320,10 @@ metric <- "Accuracy"
 train_df$Topic <- train_df$Topic_macro
 
 train_df$Topic_macro <- NULL
+
+# Classifiers
+dt_model <- train_dt_classifier(train_df, metric, control)
+svm_model <- train_svm_classifier(train_df, metric, control)
+knn_model <- train_knn_classifier(train_df, metric, control)
+rf_model <- train_rf_classifier(train_df, metric, control)
+nn_model <- train_nn_classifier(train_df, metric, control)  
