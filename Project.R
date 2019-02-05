@@ -1,10 +1,13 @@
 library(tm) # https://cran.r-project.org/web/packages/tm/tm.pdf
 library(wordcloud2)
 library(htmlwidgets)
-library(webshot)
+library(stringi)
 library(caret)
+library(dplyr)
+library(data.table)
 
-load("Project/Data/dataList.RData")
+folder <- "Project/Data/"
+load(paste0(folder, "dataList.RData"))
 tr <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_train$doc_id),
                                                     split = "/"))),
                c("Topic", "path", "id"))
@@ -14,10 +17,7 @@ te <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_te
                c("Topic", "path", "id"))
 te$Topic <- as.character(te$Topic)
 
-
 create_idtopic <- function(df) {
-
-  
   df$Topic_macro <- case_when(startsWith(df$Topic, "talk.politics") ~ "Politics",
                               startsWith(df$Topic, "comp") ~ "Computer",
                               startsWith(df$Topic, "sci") ~ "Science",
@@ -25,33 +25,26 @@ create_idtopic <- function(df) {
                               startsWith(df$Topic, "misc") ~ "Misc.forsale",
                               TRUE ~ "Religion")
   # merge duplicate docs under the same topic
-  df_macrotopic <- group_by(df, Topic_macro, id) %>% summarise()
+  df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
   return(df_macrotopic)
 }
 # (id, topc)
-macrotopic_id_trn <- create_idtopic(dataList_train)
-macrotopic_id_tst <- create_idtopic(dataList_test)
+macrotopic_id_trn <- create_idtopic(tr)
+macrotopic_id_tst <- create_idtopic(te)
+
+
 # (id, text)
 id_text <- data.frame(id = sapply(corpus, meta, "id"),
-             text = unlist(lapply(sapply(corpus, '[', "content"), paste, collapse = "\n")),
-             stringsAsFactors = FALSE)
+                      text = unlist(lapply(sapply(corpus, '[', "content"), paste, collapse = "\n")), 
+                      stringsAsFactors = FALSE)
 
-trn_df <- semi_join(macrotopic_id_trn, id_text, by = "id")
-left_joi
-tst_df <- dataList_test
+trn_df <- merge(macrotopic_id_trn, id_text, by = "id") %>% rename(doc_id = id) %>%
+  group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
+tst_df <- merge(macrotopic_id_tst, id_text, by = "id") %>% rename(doc_id = id) %>%
+  group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
 
-source <- DirSource("Project/Data/20news-bydate-train/", 
-                    recursive = TRUE, mode = "text")
-
-corpus <- VCorpus(source, readerControl = list(language = "en"))
-
-labels <- read.csv("Project/Data/corpus_train_dir.csv", header = FALSE)
-labels <- labels[1:dim(labels)[1] - 1, ]
-
-meta(corpus, "label") <- labels$V1
-
-ids <- lapply(corpus, function(x) x$meta$id)
-duplicates <- which(duplicated(unlist(lapply(ids, function(x) as.integer(x)))))
+#ids <- lapply(corpus, function(x) x$meta$id)
+#duplicates <- which(duplicated(unlist(lapply(ids, function(x) as.integer(x)))))
 
 fix.contractions <- function(doc) {
   # "won't" is a special case as it does not expand to "wo not"
@@ -85,8 +78,10 @@ fix.diacritics <- function(doc) {
 
 ## PREPROCESSING
 # Data Preprocessing
-preprocess_dataset <- function(set) {
-  corpus <- VCorpus(DataframeSource(set))
+preprocess_dataset <- function(corpus) {
+  #ifelse(isFALSE(source), 
+  #       corpus <- VCorpus(DataframeSource(set)),
+  #       corpus <- VCorpus(DataframeSource(source, readerControl = list(language = "en"))))
   # Strip white spaces at the beginning and at the end to overcome some problems
   corpus <- tm_map(corpus, content_transformer(stripWhitespace))
   # User replace_contraction function from textclean package
@@ -104,25 +99,92 @@ preprocess_dataset <- function(set) {
   
   return(corpus)
 }
-# (1) Remove numbers (i.e. "'70s" -> "'s")
-# (2) Remove English stopwords
-corpus_stopwords_removed <- tm_map(corpus_no_numbers, removeWords, stopwords("english"))
-# (3) Mutate English contractions
-corpus_contraction_fixed <- tm_map(corpus_stopwords_removed, fix.contractions)
-# (4) Mutate diacritics 
-# - how is performance if we don't take this step? English shouldn't suffer from this
-corpus_diacritics_fixed <- corpus_contraction_fixed
-#corpus_diacritics_fixed <- tm_map(corpus_contraction_fixed, fix.diacritics)
-corpus_no_punctuation <- tm_map(corpus_diacritics_fixed, removePunctuation)
-# (5) To lowercase
-corpus_normalized <- tm_map(corpus_no_punctuation, content_transformer(tolower))
-# (6) Strip whitespaces
-corpus_normalized <- tm_map(corpus_normalized, stripWhitespace)
-
-## STEMMING
-corpus_stemmed <- tm_map(corpus_normalized, stemDocument, language = "english")
-corpus_preprocessed <- tm_map(corpus_stemmed, stripWhitespace)
-
+# Feature selection
+apply_feature_selection_on_dtm <- function(dtm_fs, sparsity_value = 0.99, verbose = FALSE) {
+  if (verbose) {
+    print("DTM before sparse term removal")
+    inspect(dtm_fs)
+  }
+  
+  dtm_fs = removeSparseTerms(dtm_fs, sparsity_value)
+  
+  if (verbose) {
+    print("DTM after sparse term removal")
+    inspect(dtm_fs)
+  }
+  
+  return(dtm_fs)
+}
+# Binary matrix
+create_binary_matrix <- function(corpus, sparsity_value, verbose) {
+  if (verbose) {
+    print("Creating binary matrix...")
+  }
+  dtm_binary <- DocumentTermMatrix(corpus, control = list(weighting = weightBin))
+  dtm_binary <- apply_feature_selection_on_dtm(dtm_binary, sparsity_value, verbose)
+  matrix_binary <- as.matrix(dtm_binary)
+  return(matrix_binary)
+}
+# Bigram binary matrix
+create_bigram_binary_matrix <- function(corpus, sparsity_value, verbose) {
+  if (verbose) {
+    print("Creating bigram binary matrix...")
+  }
+  BigramTokenizer <- function(x) {
+    unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+  }
+  dtm_bigram_binary <- DocumentTermMatrix(corpus, control = list(tokenize = BigramTokenizer, weighting = weightBin))
+  dtm_bigram_binary <- apply_feature_selection_on_dtm(dtm_bigram_binary, sparsity_value, verbose)
+  matrix_bigram_binary <- as.matrix(dtm_bigram_binary)
+  return(matrix_bigram_binary)
+}
+# TF matrix
+create_tf_matrix <- function(corpus, sparsity_value, verbose) {
+  if (verbose) {
+    print("Creating tf matrix...")
+  }
+  dtm_tf <- DocumentTermMatrix(corpus)
+  dtm_tf <- apply_feature_selection_on_dtm(dtm_tf, sparsity_value, verbose)
+  matrix_tf <- as.matrix(dtm_tf)
+  return(matrix_tf)
+}
+# Bigram TF matrix
+create_bigram_tf_matrix <- function(corpus, sparsity_value, verbose) {
+  if (verbose) {
+    print("Creating bigram tf matrix...")
+  }
+  BigramTokenizer <- function(x) {
+    unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+  }
+  dtm_bigram_tf <- DocumentTermMatrix(corpus, control = list(tokenize = BigramTokenizer))
+  dtm_bigram_tf <- apply_feature_selection_on_dtm(dtm_bigram_tf, sparsity_value, verbose)
+  matrix_bigram_tf <- as.matrix(dtm_bigram_tf)
+  return(matrix_bigram_tf)
+}
+# TF-IDF matrix
+create_tfidf_matrix <- function(corpus, sparsity_value, verbose) {
+  if (verbose) {
+    print("Creating tf-idf matrix...")
+  }
+  dtm_tfidf <- DocumentTermMatrix(corpus, control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+  dtm_tfidf <- apply_feature_selection_on_dtm(dtm_tfidf, sparsity_value, verbose)
+  matrix_tfidf <- as.matrix(dtm_tfidf)
+  return(matrix_tfidf)
+}
+# Bigram TF-IDF matrix
+create_bigram_tfidf_matrix <- function(corpus, sparsity_value, verbose) {
+  if (verbose) {
+    print("Creating bigram tf-idf matrix...")
+  }
+  BigramTokenizer <- function(x) {
+    unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+  }
+  
+  dtm_bigram_tfidf <- DocumentTermMatrix(corpus, control = list(tokenize = BigramTokenizer, weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+  dtm_bigram_tfidf <- apply_feature_selection_on_dtm(dtm_bigram_tfidf, sparsity_value, verbose)
+  matrix_bigram_tfidf <- as.matrix(dtm_bigram_tfidf)
+  return(matrix_bigram_tfidf)
+}
 
 create_matrix <- function(corpus, matrix_type, sparsity_value = 0.99, verbose = NULL) {
   if (matrix_type == 'binary') {
@@ -144,62 +206,26 @@ create_matrix <- function(corpus, matrix_type, sparsity_value = 0.99, verbose = 
 }
 
 find_intersection_and_create_dataframe <- function(matrix_1, matrix_2) {
+  
   intersection_matrix <- data.frame(matrix_1[, intersect(colnames(matrix_1), 
                                                          colnames(matrix_2))])
+  intersection_matrix$id <- rownames(matrix_1)
   return(intersection_matrix)
 }
 
-summarize_distribution <- function(df) {
-  df_percentage <- prop.table(table(df$Topic)) * 100
-  distribution_summary <- cbind(freq = table(df$Topic), df_percentage)
+summarize_distribution <- function(df, macroTopic = FALSE) {
+  if (macroTopic) {
+    df_percentage <- prop.table(table(df$Topic_macro)) * 100
+    distribution_summary <- cbind(freq = table(df$Topic_macro), df_percentage)
+  } 
+  if (! macroTopic) {
+    df_percentage <- prop.table(table(df$Topic)) * 100
+    distribution_summary <- cbind(freq = table(df$Topic), df_percentage)
+  }
+  
   return(distribution_summary)
 }
 
-## TEXT REPRESENTATION
-# Bigram TF-IDF matrix
-create_bigram_tfidf_matrix <- function(corpus, sparsity_value, verbose) {
-  if (verbose) {
-    print("Creating bigram tf-idf matrix...")
-  }
-  BigramTokenizer <- function(x) {
-    unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
-  }
-  
-  dtm_bigram_tfidf <- DocumentTermMatrix(corpus, control = list(tokenize = BigramTokenizer, weighting = function(x) weightTfIdf(x, normalize = FALSE)))
-  dtm_bigram_tfidf <- apply_feature_selection_on_dtm(dtm_bigram_tfidf, sparsity_value, verbose)
-  matrix_bigram_tfidf <- as.matrix(dtm_bigram_tfidf)
-  return(matrix_bigram_tfidf)
-}
-
-corpus_bigram_tfidf_sparse_removed = removeSparseTerms(corpus_bigram_tfidf, 0.99)
-inspect(corpus_bigram_tfidf_sparse_removed)
-
-
-wanted_matrix_type <- "bigram_tfidf"
-wanted_sparsity_value <- 0.99
-wanted_verbose <- FALSE
-
-trn_set <- corpus_bigram_tfidf_sparse_removed
-#trn_set <- preprocess_dataset(trn_set)
-tst_set <- preprocess_dataset(tst_set) # doc.id | doc.text
-
-trn_matrix <- create_matrix(trn_set, wanted_matrix_type, wanted_sparsity_value, 
-                            wanted_verbose)
-tst_matrix <- create_matrix(tst_set, wanted_matrix_type, wanted_sparsity_value, 
-                            wanted_verbose)
-
-trn_df <- find_intersection_and_create_dataframe(trn_matrix, tst_matrix)
-tst_df <- find_intersection_and_create_dataframe(tst_matrix, trn_matrix)
-# Label documents
-trn_df <- cbind(trn_df, trn_labels) #class named Topic
-tst_df <- cbind(tst_df, tst_labels)
-
-print(summarize_distribution(trn_df))
-print(summarize_distribution(tst_df))
-
-
-## CLASSIFICATION
-# Decision trees
 train_dt_classifier <- function(train_df, metric, control) {
   library("C50")
   # Start timer...
@@ -211,42 +237,86 @@ train_dt_classifier <- function(train_df, metric, control) {
   return(model)
   detach("package:C50", unload = TRUE)
 }
+# Support Vector Machine
+train_svm_classifier <- function(train_df, metric, control) {
+  tic("SVM")
+  set.seed(7)
+  model <- train(Topic~., data=train_df, method="svmRadial", metric=metric, trControl=control)
+  toc()
+  return(model)
+}
+# K-Nearest Neighbors
+train_knn_classifier <- function(train_df, metric, control) {
+  tic("KNN")
+  set.seed(7)
+  model <- train(Topic~., data=train_df, method="knn", metric=metric, trControl=control)
+  toc()
+  return(model)
+}
+# Random Forest
+train_rf_classifier <- function(train_df, metric, control) {
+  tic("Random Forest")
+  set.seed(7)
+  model <- train(Topic~., data=train_df, method="rf", metric=metric, trControl=control)
+  toc()
+  return(model)
+}
+# Neural Networks
+train_nn_classifier <- function(train_df, metric, control) {
+  tic("Neural Networks")
+  set.seed(7)
+  model <- train(Topic~., data=train_df, method="nnet", metric=metric, trControl=control)
+  toc()
+  return(model)
+}
+
+### START
+train_set <- VCorpus(DirSource(paste0(folder, "20news-bydate-train/"), recursive = TRUE),
+                     readerControl = list(language = "en"))
+test_set <- VCorpus(DirSource(paste0(folder, "20news-bydate-test/"), recursive = TRUE),
+                    readerControl = list(language = "en"))
+# Training set preprocessing
+print("Training Set preprocessing...")
+train_set <- preprocess_dataset(train_set)
+# Test set preprocessing
+print("Test Set preprocessing...")
+test_set <- preprocess_dataset(test_set)
+
+# Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
+wanted_matrix_type <- "bigram_tfidf"
+wanted_sparsity_value <- 0.99
+wanted_verbose <- FALSE
+
+train_matrix <- create_matrix(train_set, 
+                              wanted_matrix_type, 
+                              wanted_sparsity_value, 
+                              wanted_verbose)
+test_matrix <- create_matrix(test_set, 
+                             wanted_matrix_type, 
+                             wanted_sparsity_value, 
+                             wanted_verbose)
+
+# Create intersection dataframes and label them
+train_df <- find_intersection_and_create_dataframe(train_matrix, test_matrix)
+test_df <- find_intersection_and_create_dataframe(test_matrix, train_matrix)
+
+# Add target class column (adds both topic and macro_topic)
+#macrotopic_id_trn$id <- paste0("X", macrotopic_id_trn$id)
+#macrotopic_id_tst$id <- paste0("X", macrotopic_id_tst$id)
+
+train_df <- left_join(train_df, macrotopic_id_trn, by = "id")
+test_df <- left_join(test_df, macrotopic_id_tst, by = "id")
+train_df$id <- NULL
+test_df$id <- NULL
+
+# Summarize distributions
+print(summarize_distribution(train_df, macroTopic = FALSE))
+print(summarize_distribution(test_df, macroTopic = TRUE))
 
 control <- trainControl(method = "cv", number = 5)
 metric <- "Accuracy"
 
-dt_model <- train_dt_classifier(trn_df, metric, control)
+# If we want to use macro_topic with six classes take the step below
+train_df$Topic <- train_df$Topic_macro
 
-
-## Word cloud
-corpus_matrix <- as.matrix(corpus_bigram_tfidf_sparse_removed)
-v <- sort(colSums(corpus_matrix), decreasing = TRUE)
-corpus_for_wc2 <- data.frame(word=names(v), freq = v)
-bigram_tf_matrix_wc <- wordcloud2(corpus_for_wc2, fontFamily="Helvetica", fontWeight="100", color="random-dark", size=0.4, shape="circle", backgroundColor="white")
-saveWidget(bigram_tf_matrix_wc, "tmp.html", selfcontained = F)
-webshot("tmp.html", "corpus_bigram_tfidf_sparse_removed.png", delay = 5)
-
-
-
-##TODO - from here on
-corpus_bigram_tf <- DocumentTermMatrix(corpus_preprocessed, 
-                                       control = list(tokenize = BigramTokenizer))
-
-
-
-# Tokenize
-boost_tokenized_corpus <- tm_map(corpus, Boost_tokenizer)
-mc_tokenized_corpus <- lapply(corpus, MC_tokenizer)
-scan_tokenized_corpus <- lapply(corpus, scan_tokenizer)
-split_space_tokenizer <- function(x) unlist(strsplit(as.character(x), "[[:space:]]+"))
-split_space_tokenized_corpus <- lapply(corpus, split_space_tokenizer)
-# Choose tokenizer
-tokenized_list <- boost_tokenized_corpus
-
-
-
-# Term frequency document-term matrix
-corpus_dtm <- DocumentTermMatrix(corpus)
-corpus_matrix <- as.matrix(corpus_dtm)
-v <- sort(colSums(corpus_matrix), decreasing = TRUE)
-corpus_for_wc2 <- data.frame(word = names(v), freq = v)
+train_df$Topic_macro <- NULL
