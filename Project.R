@@ -1,33 +1,37 @@
 library(tm) # https://cran.r-project.org/web/packages/tm/tm.pdf
-library(wordcloud2)
-library(htmlwidgets)
 library(stringi)
 library(caret)
 library(dplyr)
+library(tictoc)
 library(data.table)
 
 folder <- "Project/Data/"
 load(paste0(folder, "dataList.RData"))
-tr <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_train$doc_id),
-                                                    split = "/"))),
-               c("Topic", "path", "id"))
-tr$Topic <- as.character(tr$Topic)
-te <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_test$doc_id),
-                                                    split = "/"))),
-               c("Topic", "path", "id"))
-te$Topic <- as.character(te$Topic)
 
+## Create TARGET class function
 create_idtopic <- function(df) {
   df$Topic_macro <- case_when(startsWith(df$Topic, "talk.politics") ~ "Politics",
                               startsWith(df$Topic, "comp") ~ "Computer",
                               startsWith(df$Topic, "sci") ~ "Science",
                               startsWith(df$Topic, "rec") ~ "Rec",
                               startsWith(df$Topic, "misc") ~ "Misc.forsale",
-                              TRUE ~ "Religion")
+                              TRUE ~ "Religion") # altrimenti in tutti gli altri casi ~ 'religione'
+  # Important !
   # merge duplicate docs under the same topic
   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
   return(df_macrotopic)
 }
+
+# PRE_PREPROCESS dataframes
+tr <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_train$doc_id),
+                                                    split = "/"))),
+               c("Topic", "path", "id"))
+te <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_test$doc_id),
+                                                    split = "/"))),
+               c("Topic", "path", "id"))
+tr$Topic <- as.character(tr$Topic)
+te$Topic <- as.character(te$Topic)
+
 # (id, topc)
 macrotopic_id_trn <- create_idtopic(tr)
 macrotopic_id_tst <- create_idtopic(te)
@@ -35,16 +39,15 @@ macrotopic_id_tst <- create_idtopic(te)
 
 # (id, text)
 id_text <- data.frame(id = sapply(corpus, meta, "id"),
-                      text = unlist(lapply(sapply(corpus, '[', "content"), paste, collapse = "\n")), 
+                      text = unlist(lapply(
+                        sapply(corpus, '[', "content"), paste, collapse = "\n")), 
                       stringsAsFactors = FALSE)
 
+## JOIN (id,topic) with docs
 trn_df <- merge(macrotopic_id_trn, id_text, by = "id") %>% rename(doc_id = id) %>%
   group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
 tst_df <- merge(macrotopic_id_tst, id_text, by = "id") %>% rename(doc_id = id) %>%
   group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
-
-#ids <- lapply(corpus, function(x) x$meta$id)
-#duplicates <- which(duplicated(unlist(lapply(ids, function(x) as.integer(x)))))
 
 fix.contractions <- function(doc) {
   # "won't" is a special case as it does not expand to "wo not"
@@ -61,44 +64,32 @@ fix.contractions <- function(doc) {
   return(doc)
 }
 
-fix.diacritics <- function(doc) {
-  diacritics = list('Š'='S', 'š'='s', 'Ž'='Z', 'ž'='z', 'À'='A', 'Á'='A', 'Â'='A', 'Ã'='A',
-                    'Ä'='A', 'Å'='A', 'Æ'='A', 'Ç'='C', 'È'='E', 'É'='E', 'Ê'='E', 'Ë'='E',
-                    'Ì'='I', 'Í'='I', 'Î'='I', 'Ï'='I', 'Ñ'='N', 'Ò'='O', 'Ó'='O', 'Ô'='O',
-                    'Õ'='O', 'Ö'='O', 'Ø'='O', 'Ù'='U', 'Ú'='U', 'Û'='U', 'Ü'='U', 'Ý'='Y',
-                    'Þ'='B', 'ß'='Ss', 'à'='a', 'á'='a', 'â'='a', 'ã'='a', 'ä'='a', 'å'='a',
-                    'æ'='a', 'ç'='c', 'è'='e', 'é'='e', 'ê'='e', 'ë'='e', 'ì'='i', 'í'='i',
-                    'î'='i', 'ï'='i', 'ð'='o', 'ñ'='n', 'ò'='o', 'ó'='o', 'ô'='o', 'õ'='o',
-                    'ö'='o', 'ø'='o', 'ù'='u', 'ú'='u', 'û'='u', 'ý'='y', 'ý'='y', 'þ'='b',
-                    'ÿ'='y')
-  doc$content <- chartr(paste(names(diacritics), collapse=''), paste(diacritics, collapse=''),
-                        doc$content)
-  return(doc)
+RemoveEmail <- function(x) {
+  require(stringr)
+  str_replace_all(x,"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "")
 }
 
 ## PREPROCESSING
 # Data Preprocessing
 preprocess_dataset <- function(corpus) {
-  #ifelse(isFALSE(source), 
-  #       corpus <- VCorpus(DataframeSource(set)),
-  #       corpus <- VCorpus(DataframeSource(source, readerControl = list(language = "en"))))
-  # Strip white spaces at the beginning and at the end to overcome some problems
   corpus <- tm_map(corpus, content_transformer(stripWhitespace))
-  # User replace_contraction function from textclean package
-  # parameter 'ucp': characters with Unicode general category Nd (Decimal_Number)
-  corpus <- tm_map(corpus, removeNumbers, ucp = TRUE)
-  corpus <- tm_map(corpus, fix.contractions)
-  #corpus <- tm_map(corpus, content_transformer(replace_contraction))
+  corpus <- tm_map(corpus, content_transformer(RemoveEmail))
+  corpus <- tm_map(corpus, removeNumbers)
+  # Normalization
   corpus <- tm_map(corpus, content_transformer(tolower))
-  #corpus <- tm_map(corpus, fix.diacritics)
+  # Expand contractions --> la funzione vede solo lowercase
+  corpus <- tm_map(corpus, fix.contractions)
   corpus <- tm_map(corpus, content_transformer(removePunctuation))
-  corpus <- tm_map(corpus, content_transformer(removeNumbers))
+  corpus <- tm_map(corpus, content_transformer(stripWhitespace))
+  # Stemming
   corpus <- tm_map(corpus, stemDocument, language = "english")
+  # Stopwords removal
   corpus <- tm_map(corpus, removeWords, stopwords("english"))
   corpus <- tm_map(corpus, content_transformer(stripWhitespace))
   
   return(corpus)
 }
+
 # Feature selection
 apply_feature_selection_on_dtm <- function(dtm_fs, sparsity_value = 0.99, verbose = FALSE) {
   if (verbose) {
@@ -115,6 +106,7 @@ apply_feature_selection_on_dtm <- function(dtm_fs, sparsity_value = 0.99, verbos
   
   return(dtm_fs)
 }
+
 # Binary matrix
 create_binary_matrix <- function(corpus, sparsity_value, verbose) {
   if (verbose) {
@@ -270,7 +262,7 @@ train_nn_classifier <- function(train_df, metric, control) {
   return(model)
 }
 
-### START
+### START HERE ! ###
 train_set <- VCorpus(DirSource(paste0(folder, "20news-bydate-train/"), recursive = TRUE),
                      readerControl = list(language = "en"))
 test_set <- VCorpus(DirSource(paste0(folder, "20news-bydate-test/"), recursive = TRUE),
@@ -283,7 +275,7 @@ print("Test Set preprocessing...")
 test_set <- preprocess_dataset(test_set)
 
 # Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
-wanted_matrix_type <- "bigram_tfidf"
+wanted_matrix_type <- "tfidf"
 wanted_sparsity_value <- 0.99
 wanted_verbose <- FALSE
 
@@ -299,31 +291,73 @@ test_matrix <- create_matrix(test_set,
 # Create intersection dataframes and label them
 train_df <- find_intersection_and_create_dataframe(train_matrix, test_matrix)
 test_df <- find_intersection_and_create_dataframe(test_matrix, train_matrix)
-
+# Change id to be equal to rownames of the df, which are the ids
+macrotopic_id_trn$id <- paste0("X", macrotopic_id_trn$id)
+macrotopic_id_tst$id <- paste0("X", macrotopic_id_tst$id)
 # Add target class column (adds both topic and macro_topic)
-#macrotopic_id_trn$id <- paste0("X", macrotopic_id_trn$id)
-#macrotopic_id_tst$id <- paste0("X", macrotopic_id_tst$id)
-
 train_df <- left_join(train_df, macrotopic_id_trn, by = "id")
 test_df <- left_join(test_df, macrotopic_id_tst, by = "id")
+# Remove id, not needed anymore
 train_df$id <- NULL
 test_df$id <- NULL
 
-# Summarize distributions
+# Summarize target class distributions
 print(summarize_distribution(train_df, macroTopic = FALSE))
 print(summarize_distribution(test_df, macroTopic = TRUE))
 
+# CARET: train control parameters and desired performance metric
 control <- trainControl(method = "cv", number = 5)
 metric <- "Accuracy"
 
 # If we want to use macro_topic with six classes take the step below
 train_df$Topic <- train_df$Topic_macro
+test_df$Topic  <- test_df$Topic_macro
 
 train_df$Topic_macro <- NULL
+test_df$Topic_macro  <- NULL
 
 # Classifiers
 dt_model <- train_dt_classifier(train_df, metric, control)
 svm_model <- train_svm_classifier(train_df, metric, control)
-knn_model <- train_knn_classifier(train_df, metric, control)
 rf_model <- train_rf_classifier(train_df, metric, control)
 nn_model <- train_nn_classifier(train_df, metric, control)  
+knn_model <- train_knn_classifier(train_df, metric, control)
+
+results <- resamples(list(DecisionTree = dt_model, 
+                          RandomForest = rf_model, 
+                          SVM = svm_model, 
+                          KNN = knn_model,
+                          NeuralNetwork = nn_model))
+# summarize the distributions
+summary(results)
+# boxplots of results
+bwplot(results)
+# dot plots of results
+dotplot(results)
+
+# Test predictions
+dt_predictions <- predict(dt_model, newdata = test_df)
+dt_confusion_matrix <- confusionMatrix(table(dt_predictions, test_df$Topic))
+cat('Decision Tree test accuracy: ', unname(dt_confusion_matrix$overall[1]), '\n')
+
+svm_predictions <- predict(svm_model, newdata = test_df)
+svm_confusion_matrix <- confusionMatrix(table(svm_predictions, test_df$Topic))
+cat('SVM test accuracy: ', unname(svm_confusion_matrix$overall[1]), '\n')
+
+knn_predictions <- predict(knn_model, newdata = test_df)
+knn_confusion_matrix <- confusionMatrix(table(knn_predictions, test_df$Topic))
+cat('KNN test accuracy: ', unname(knn_confusion_matrix$overall[1]), '\n')
+
+rf_predictions <- predict(rf_model, newdata = test_df)
+rf_confusion_matrix <- confusionMatrix(table(rf_predictions, test_df$Topic))
+cat('Random Forest test accuracy: ', unname(rf_confusion_matrix$overall[1]), '\n')
+
+nn_predictions <- predict(nn_model, newdata = test_df)
+nn_confusion_matrix <- confusionMatrix(table(nn_predictions, test_df$Topic))
+cat('Neural Networks test accuracy: ', unname(nn_confusion_matrix$overall[1]), '\n')
+
+
+#results_bigramTfIdf_0.99sparsity <- results
+#save(list = c("results_bigramTfIdf_0.99sparsity"),
+#     file = paste0(folder, "results.RData"))
+                                                                
