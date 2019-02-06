@@ -1,0 +1,68 @@
+> print(summarize_distribution(train_df))
+                         freq df_percentage
+alt.atheism               609      4.242720
+comp.graphics             584      4.068552
+comp.os.ms-windows.misc   591      4.117319
+comp.sys.ibm.pc.hardware  789      5.496726
+comp.sys.mac.hardware     578      4.026752
+comp.windows.x            593      4.131253
+misc.forsale              947      6.597464
+rec.autos                 644      4.486554
+rec.motorcycles           970      6.757698
+rec.sport.baseball        937      6.527797
+rec.sport.hockey         1095      7.628536
+sci.crypt                 595      4.145186
+sci.electronics          1050      7.315034
+sci.med                   675      4.702522
+sci.space                 711      4.953323
+soc.religion.christian    599      4.173053
+talk.politics.guns        619      4.312387
+talk.politics.mideast     926      6.451163
+talk.politics.misc        465      3.239515
+talk.religion.misc        377      2.626446
+> print(summarize_distribution(train_df, macroTopic = T))
+             freq df_percentage
+Computer     3135     21.840602
+Misc.forsale  947      6.597464
+Politics     2010     14.003065
+Rec          3646     25.400585
+Religion     1585     11.042218
+Science      3031     21.116065
+> print(summarize_distribution(train_df, macroTopic = T))
+       freq df_percentage
+NoRec 10708      74.59941
+Rec    3646      25.40059
+> print(summarize_distribution(test_df))
+                         freq df_percentage
+alt.atheism               450      5.032431
+comp.graphics             389      4.350257
+comp.os.ms-windows.misc   394      4.406173
+comp.sys.ibm.pc.hardware  392      4.383807
+comp.sys.mac.hardware     385      4.305524
+comp.windows.x            395      4.417356
+misc.forsale              455      5.088347
+rec.autos                 396      4.428539
+rec.motorcycles           642      7.179602
+rec.sport.baseball        641      7.168419
+rec.sport.hockey          710      7.940058
+sci.crypt                 396      4.428539
+sci.electronics           697      7.794677
+sci.med                   396      4.428539
+sci.space                 394      4.406173
+soc.religion.christian    398      4.450906
+talk.politics.guns        410      4.585104
+talk.politics.mideast     441      4.931783
+talk.politics.misc        310      3.466786
+talk.religion.misc        251      2.806978
+> print(summarize_distribution(test_df, macroTopic = T))
+             freq df_percentage
+Computer     1955     21.863118
+Misc.forsale  455      5.088347
+Politics     1161     12.983673
+Rec          2389     26.716618
+Religion     1099     12.290315
+Science      1883     21.057929
+> print(summarize_distribution(test_df, macroTopic = T))
+      freq df_percentage
+NoRec 6553      73.28338
+Rec   2389      26.71662
