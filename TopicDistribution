@@ -28,6 +28,10 @@ Politics     2010     14.003065
 Rec          3646     25.400585
 Religion     1585     11.042218
 Science      3031     21.116065
+> print(summarize_distribution(train_df, macroTopic = T))
+       freq df_percentage
+NoRec 10708      74.59941
+Rec    3646      25.40059
 > print(summarize_distribution(test_df))
                          freq df_percentage
 alt.atheism               450      5.032431
@@ -58,3 +62,7 @@ Politics     1161     12.983673
 Rec          2389     26.716618
 Religion     1099     12.290315
 Science      1883     21.057929
+> print(summarize_distribution(test_df, macroTopic = T))
+      freq df_percentage
+NoRec 6553      73.28338
+Rec   2389      26.71662
