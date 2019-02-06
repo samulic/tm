@@ -7,6 +7,11 @@ library(data.table)
 
 folder <- "Project/Data/"
 load(paste0(folder, "dataList.RData"))
+# Read corpus from filesystem
+corpus_tr <- VCorpus(DirSource(paste0(folder, "20news-bydate-train/"), recursive = TRUE),
+                     readerControl = list(language = "en"))
+corpus_te <- VCorpus(DirSource(paste0(folder, "20news-bydate-test/"), recursive = TRUE),
+                    readerControl = list(language = "en"))
 
 ## Create TARGET class function
 create_idtopic <- function(df) {
@@ -37,16 +42,20 @@ macrotopic_id_trn <- create_idtopic(tr)
 macrotopic_id_tst <- create_idtopic(te)
 
 
-# (id, text)
-id_text <- data.frame(id = sapply(corpus, meta, "id"),
+# (id, text) # from filesystem's corpora
+id_text_tr <- data.frame(id = sapply(corpus_tr, meta, "id"),
                       text = unlist(lapply(
-                        sapply(corpus, '[', "content"), paste, collapse = "\n")), 
+                        sapply(corpus_tr, '[', "content"), paste, collapse = "\n")), 
                       stringsAsFactors = FALSE)
+id_text_te <- data.frame(id = sapply(corpus_te, meta, "id"),
+                         text = unlist(lapply(
+                           sapply(corpus_te, '[', "content"), paste, collapse = "\n")), 
+                         stringsAsFactors = FALSE)
 
 ## JOIN (id,topic) with docs
-trn_df <- merge(macrotopic_id_trn, id_text, by = "id") %>% rename(doc_id = id) %>%
+trn_df <- merge(macrotopic_id_trn, id_text_tr, by = "id") %>% rename(doc_id = id) %>%
   group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
-tst_df <- merge(macrotopic_id_tst, id_text, by = "id") %>% rename(doc_id = id) %>%
+tst_df <- merge(macrotopic_id_tst, id_text_te, by = "id") %>% rename(doc_id = id) %>%
   group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
 
 fix.contractions <- function(doc) {
@@ -263,16 +272,12 @@ train_nn_classifier <- function(train_df, metric, control) {
 }
 
 ### START HERE ! ###
-train_set <- VCorpus(DirSource(paste0(folder, "20news-bydate-train/"), recursive = TRUE),
-                     readerControl = list(language = "en"))
-test_set <- VCorpus(DirSource(paste0(folder, "20news-bydate-test/"), recursive = TRUE),
-                    readerControl = list(language = "en"))
 # Training set preprocessing
 print("Training Set preprocessing...")
-train_set <- preprocess_dataset(train_set)
+train_set <- preprocess_dataset(corpus_tr)
 # Test set preprocessing
 print("Test Set preprocessing...")
-test_set <- preprocess_dataset(test_set)
+test_set <- preprocess_dataset(corpus_te)
 
 # Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
 wanted_matrix_type <- "tfidf"
@@ -305,9 +310,10 @@ test_df$id <- NULL
 print(summarize_distribution(train_df, macroTopic = FALSE))
 print(summarize_distribution(test_df, macroTopic = TRUE))
 
-# CARET: train control parameters and desired performance metric
-control <- trainControl(method = "cv", number = 5)
-metric <- "Accuracy"
+# At this point we have collinear Topic column at different level of granularity
+# as a consequence we also have duplicates
+# so we need to group by id and desired column of Topic which will
+train_df <- group_by()
 
 # If we want to use macro_topic with six classes take the step below
 train_df$Topic <- train_df$Topic_macro
@@ -315,6 +321,10 @@ test_df$Topic  <- test_df$Topic_macro
 
 train_df$Topic_macro <- NULL
 test_df$Topic_macro  <- NULL
+
+# CARET: train control parameters and desired performance metric
+control <- trainControl(method = "cv", number = 5)
+metric <- "Accuracy"
 
 # Classifiers
 dt_model <- train_dt_classifier(train_df, metric, control)
