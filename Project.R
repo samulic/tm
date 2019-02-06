@@ -271,7 +271,7 @@ train_rf_classifier <- function(train_df, metric, control) {
   return(model)
 }
 # Neural Networks
-train_nn_classifier <- function(train_df, metric, control) {results_bigramTfIdf_0.99sparsity
+train_nn_classifier <- function(train_df, metric, control) {
   tic("Neural Networks")
   set.seed(7)
   model <- train(Topic~., data=train_df, method="nnet", metric=metric, trControl=control)
@@ -289,7 +289,7 @@ test_set <- preprocess_dataset(corpus_te)
 
 # Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
 wanted_matrix_type <- "tfidf"
-wanted_sparsity_value <- 0.95
+wanted_sparsity_value <- 0.99
 wanted_verbose <- FALSE
 
 train_matrix <- create_matrix(train_set, 
@@ -359,10 +359,10 @@ control <- trainControl(method = "cv", number = 5, classProbs = T)
 metric <- "ROC"
 
 # Classifiers
+nn_model <- train_nn_classifier(train_df, metric, control)  
 dt_model <- train_dt_classifier(train_df, metric, control)
 svm_model <- train_svm_classifier(train_df, metric, control)
 rf_model <- train_rf_classifier(train_df, metric, control)
-nn_model <- train_nn_classifier(train_df, metric, control)  
 knn_model <- train_knn_classifier(train_df, metric, control)
 
 results <- resamples(list(DecisionTree = dt_model, 
