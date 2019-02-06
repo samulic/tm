@@ -271,7 +271,7 @@ train_rf_classifier <- function(train_df, metric, control) {
   return(model)
 }
 # Neural Networks
-train_nn_classifier <- function(train_df, metric, control) {
+train_nn_classifier <- function(train_df, metric, control) {results_bigramTfIdf_0.99sparsity
   tic("Neural Networks")
   set.seed(7)
   model <- train(Topic~., data=train_df, method="nnet", metric=metric, trControl=control)
@@ -289,7 +289,7 @@ test_set <- preprocess_dataset(corpus_te)
 
 # Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
 wanted_matrix_type <- "tfidf"
-wanted_sparsity_value <- 0.99
+wanted_sparsity_value <- 0.95
 wanted_verbose <- FALSE
 
 train_matrix <- create_matrix(train_set, 
@@ -400,6 +400,6 @@ cat('Neural Networks test accuracy: ', unname(nn_confusion_matrix$overall[1]), '
 
 
 #results_bigramTfIdf_0.99sparsity <- results
-#save(list = c("results_bigramTfIdf_0.99sparsity"),
-#     file = paste0(folder, "results.RData"))
+save(list = c("results"),
+     file = paste0(folder, "results_1.RData"))
                                                                 
