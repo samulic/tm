@@ -5,7 +5,7 @@ library(dplyr)
 library(tictoc)
 library(data.table)
 
-folder <- "Project/Data/"
+folder <- "Data/"
 load(paste0(folder, "dataList.RData"))
 # Read corpus from filesystem
 corpus_tr <- VCorpus(DirSource(paste0(folder, "20news-bydate-train/"), recursive = TRUE),
@@ -21,6 +21,14 @@ create_idtopic <- function(df) {
                               startsWith(df$Topic, "rec") ~ "Rec",
                               startsWith(df$Topic, "misc") ~ "Misc.forsale",
                               TRUE ~ "Religion") # altrimenti in tutti gli altri casi ~ 'religione'
+  # Important !
+  # merge duplicate docs under the same topic
+  df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
+  return(df_macrotopic)
+}
+create_idtopic <- function(df) {
+  df$Topic_macro <- case_when(startsWith(df$Topic, "rec") ~ "Rec",
+                              TRUE ~ "NoRec") # altrimenti in tutti gli altri casi 
   # Important !
   # merge duplicate docs under the same topic
   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
@@ -297,34 +305,58 @@ test_matrix <- create_matrix(test_set,
 train_df <- find_intersection_and_create_dataframe(train_matrix, test_matrix)
 test_df <- find_intersection_and_create_dataframe(test_matrix, train_matrix)
 # Change id to be equal to rownames of the df, which are the ids
-macrotopic_id_trn$id <- paste0("X", macrotopic_id_trn$id)
-macrotopic_id_tst$id <- paste0("X", macrotopic_id_tst$id)
+#macrotopic_id_trn$id <- paste0("X", macrotopic_id_trn$id)
+#macrotopic_id_tst$id <- paste0("X", macrotopic_id_tst$id)
+# Remove duplicates in wider macro group (that now have the same macro_topic)
+macrotopic_id_trn <- group_by(macrotopic_id_trn, id, Topic_macro) %>% summarise()
+macrotopic_id_tst <- group_by(macrotopic_id_tst, id, Topic_macro) %>% summarise()
+# Duplicati che stanno in piu' macroclassi contemporaneamente sono da rimuovere
+# Individua duplicati
+dup_tr <- group_by(macrotopic_id_trn, id) %>% filter(n() > 1)
+dup_te <- group_by(macrotopic_id_tst, id) %>% filter(n() > 1)
+# Rimuovi duplicati
+macrotopic_trn <- macrotopic_id_trn[-which(macrotopic_id_trn$id %in% dup_tr$id),]
+macrotopic_tst <- macrotopic_id_tst[-which(macrotopic_id_tst$id %in% dup_te$id),]
+
 # Add target class column (adds both topic and macro_topic)
-train_df <- left_join(train_df, macrotopic_id_trn, by = "id")
-test_df <- left_join(test_df, macrotopic_id_tst, by = "id")
+train_df <- merge(train_df, macrotopic_trn, by = "id")
+test_df <- merge(test_df, macrotopic_tst, by = "id")
+# Individua duplicati
+dup_tr_df <- group_by(train_df, id, Topic_macro) %>% filter(n() > 1)
+dup_te_df <- group_by(test_df, id, Topic_macro) %>% filter(n() > 1)
+# Rimuovili
+train_df <- train_df[-which(train_df$id %in% dup_tr_df$id),]
+test_df  <- test_df[-which(test_df$id %in% dup_te_df$id),]
+# Any null?
+any(is.na(train_df$Topic_macro))
+any(is.na(test_df$Topic_macro))
 # Remove id, not needed anymore
 train_df$id <- NULL
 test_df$id <- NULL
 
 # Summarize target class distributions
-print(summarize_distribution(train_df, macroTopic = FALSE))
-print(summarize_distribution(test_df, macroTopic = TRUE))
+print(summarize_distribution(train_df, macroTopic = F))
+print(summarize_distribution(test_df, macroTopic = F))
+# If we want to use macro_topic with six classes take the step below
+train_df$Topic <- train_df$Topic_macro
+test_df$Topic  <- test_df$Topic_macro
 
 # At this point we have collinear Topic column at different level of granularity
 # as a consequence we also have duplicates
 # so we need to group by id and desired column of Topic which will
-train_df <- group_by()
-
-# If we want to use macro_topic with six classes take the step below
-train_df$Topic <- train_df$Topic_macro
-test_df$Topic  <- test_df$Topic_macro
+#n_occur_tr <- data.frame(table(train_df$id))
+#n_occur_te <- data.frame(table(test_df$id))
+#duplicated_tr <- train_df[train_df$id %in% n_occur_tr$Var1[n_occur_tr$Freq > 1],
+#                          c("Topic_macro", "id")]
+#duplicated_te <- test_df[test_df$id %in% n_occur_te$Var1[n_occur_te$Freq > 1],
+#                          c("Topic_macro", "id")]
 
 train_df$Topic_macro <- NULL
 test_df$Topic_macro  <- NULL
 
 # CARET: train control parameters and desired performance metric
-control <- trainControl(method = "cv", number = 5)
-metric <- "Accuracy"
+control <- trainControl(method = "cv", number = 5, classProbs = T)
+metric <- "ROC"
 
 # Classifiers
 dt_model <- train_dt_classifier(train_df, metric, control)
