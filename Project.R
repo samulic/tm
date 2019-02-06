@@ -5,7 +5,7 @@ library(dplyr)
 library(tictoc)
 library(data.table)
 
-folder <- "Data/"
+folder <- "Project/Data/"
 load(paste0(folder, "dataList.RData"))
 # Read corpus from filesystem
 corpus_tr <- VCorpus(DirSource(paste0(folder, "20news-bydate-train/"), recursive = TRUE),
@@ -27,8 +27,8 @@ create_idtopic <- function(df) {
   return(df_macrotopic)
 }
 create_idtopic <- function(df) {
-  df$Topic_macro <- case_when(startsWith(df$Topic, "rec") ~ "Rec",
-                              TRUE ~ "NoRec") # altrimenti in tutti gli altri casi 
+  df$Topic_macro <- case_when(startsWith(df$Topic, "sci") ~ "Sci",
+                              TRUE ~ "NoSci") # altrimenti in tutti gli altri casi 
   # Important !
   # merge duplicate docs under the same topic
   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
