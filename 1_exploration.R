@@ -1,14 +1,17 @@
 library("tm")
 library("dplyr")
-library("RNewsflow")
+#library("RNewsflow") # la sua funzione delete.duplicates non funziona!
 library("wordcloud2")
 library("htmlwidgets")
 library("webshot")
+### WORD CLOUD EXPLORATION ###
 
 folder <- "Project/" # root project folder
+
 # load function to build different representation matrixes
 load(paste0(folder, "helper_functions.RData")) 
-# load both training and test data 
+
+# load training and test data 
 corpus_tr <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-train/"), recursive = TRUE),
                      readerControl = list(language = "en"))
 corpus_te <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-test/"), recursive = TRUE),
