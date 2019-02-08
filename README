@@ -1,7 +1,7 @@
 Text Mining and Search project
 
 ### FOLDER'S STRUCTURE ###
-Root
+Project_root
 --Plots			# Folder for wordclouds and models' performance plots
 --Data			# Data folder
 ----preprocessed.RData	# Output df from file '2_preprocessing.R' with unique combination of matrix type and sparsity
