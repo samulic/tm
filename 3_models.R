@@ -1,7 +1,12 @@
 library(caret)
 library(dplyr)
 library(tictoc)
-folder <- "Project/"
+library(doParallel)
+
+### MODELS TRAINING AND TESTING ###
+
+folder <- "Project/" # Project's root folder
+## Classifiers used
 # Decision Tree
 train_dt_classifier <- function(train_df, metric, control) {
   library("C50")
@@ -47,10 +52,16 @@ train_nn_classifier <- function(train_df, metric, control) {
   return(model)
 }
 
-load(paste0(folder, "Data/preprocessed.Rdata")) # train_df and test_df 
+## Load preprocessed dataframes from '2_preprocessing.R'
+# train_df and test_df, type of matrix (i.e. "tfidf")
+load(paste0(folder, "Data/preprocessed.RData"))
 # Summarize target class distributions
 prop.table(table(train_df$Topic)) * 100
 prop.table(table(test_df$Topic)) * 100
+
+# Use parallel processing
+cl <- makePSOCKcluster(5)
+registerDoParallel(cl)
 
 # CARET: train control parameters and desired performance metric
 control <- trainControl(method = "cv", number = 5, classProbs = TRUE,
@@ -64,13 +75,15 @@ svm_model <- train_svm_classifier(train_df, metric, control)
 rf_model <- train_rf_classifier(train_df, metric, control)
 knn_model <- train_knn_classifier(train_df, metric, control)
 
+# Stop parallel processing
+stopCluster(cl)
+
 results <- resamples(list(DecisionTree = dt_model, 
                           RandomForest = rf_model, 
                           SVM = svm_model, 
                           KNN = knn_model,
-                          NeuralNetwork2= nn2_model,
                           NeuralNetwork = nn_model))
-# summarize the distributions
+# summarize the performances' distribution
 summary(results)
 # boxplots of results
 bwplot(results)
@@ -97,3 +110,4 @@ cat('Random Forest test accuracy: ', unname(rf_confusion_matrix$overall[1]), '\n
 nn_predictions <- predict(nn_model, newdata = test_df)
 nn_confusion_matrix <- confusionMatrix(table(nn_predictions, test_df$Topic))
 cat('Neural Networks test accuracy: ', unname(nn_confusion_matrix$overall[1]), '\n')
+
