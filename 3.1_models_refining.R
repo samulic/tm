@@ -1,3 +1,5 @@
+library(tictoc)
+library(caret)
 load("Project/Data/models_declaration.RData") # contains classifiers declaration
 load("Project/Data/preprocessed.RData")
 load("Project/Data/nn_result_default.RData")
@@ -20,6 +22,8 @@ plot(threshold, nimps, type = "l",
 
 t <- 57
 var <- rownames(data.frame(imps[imps > t,]))
+var <- c(var, "Topic") # add target class
+
 # Fit KNN on most important variables only
-knn_model <- train_knn_classifier(train_df[, var], metric, control)
+small_knn_model <- train_knn_classifier(train_df[, var], metric, control)
 
