@@ -13,21 +13,21 @@ corpus_te <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-test/"), recur
                     readerControl = list(language = "en"))
 
 ## Create TARGET class function
-create_idtopic <- function(df) {
-  df$Topic_macro <- case_when(startsWith(df$Topic, "talk.politics") ~ "Politics",
-                              startsWith(df$Topic, "comp") ~ "Computer",
-                              startsWith(df$Topic, "sci") ~ "Science",
-                              startsWith(df$Topic, "rec") ~ "Rec",
-                              startsWith(df$Topic, "misc") ~ "Misc.forsale",
-                              TRUE ~ "Religion") # altrimenti in tutti gli altri casi ~ 'religione'
-  # Important !
-  # merge duplicate docs under the same topic
-  df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
-  return(df_macrotopic)
-}
+# create_idtopic <- function(df) {
+#   df$Topic_macro <- case_when(startsWith(df$Topic, "talk.politics") ~ "Politics",
+#                               startsWith(df$Topic, "comp") ~ "Computer",
+#                               startsWith(df$Topic, "sci") ~ "Science",
+#                               startsWith(df$Topic, "rec") ~ "Rec",
+#                               startsWith(df$Topic, "misc") ~ "Misc.forsale",
+#                               TRUE ~ "Religion") # altrimenti in tutti gli altri casi ~ 'religione'
+#   # Important !
+#   # merge duplicate docs under the same topic
+#   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
+#   return(df_macrotopic)
+# }
 create_idtopic <- function(df) {
   df$Topic_macro <- case_when(startsWith(df$Topic, "sci") ~ "Sci",
-                              TRUE ~ "NoSci") # altrimenti in tutti gli altri casi 
+                              TRUE ~ "NoSci") # altrimenti in tutti gli altri casi -> "NoScience"
   # Important !
   # merge duplicate docs under the same topic
   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
@@ -44,7 +44,7 @@ te <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_te
 tr$Topic <- as.character(tr$Topic)
 te$Topic <- as.character(te$Topic)
 
-# (id, topc)
+# (id, topic)
 macrotopic_id_trn <- create_idtopic(tr)
 macrotopic_id_tst <- create_idtopic(te)
 
@@ -65,7 +65,6 @@ trn_df <- merge(macrotopic_id_trn, id_text_tr, by = "id") %>% rename(doc_id = id
 tst_df <- merge(macrotopic_id_tst, id_text_te, by = "id") %>% rename(doc_id = id) %>%
   group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
 
-
 ### START HERE ! ###
 load("Project/helper_functions.RData")
 # Training set preprocessing
@@ -75,6 +74,7 @@ train_set <- preprocess_dataset(corpus_tr)
 print("Test Set preprocessing...")
 test_set <- preprocess_dataset(corpus_te)
 
+# Choose text representation matrix and sparsity threshold
 # Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
 wanted_matrix_type <- "tfidf"
 wanted_sparsity_value <- 0.99
@@ -101,8 +101,7 @@ macrotopic_id_tst <- group_by(macrotopic_id_tst, id, Topic_macro) %>% summarise(
 # Duplicati che stanno in piu' macroclassi contemporaneamente sono da rimuovere
 # Individua duplicati
 dup_tr <- group_by(macrotopic_id_trn, id) %>% filter(n() > 1)
-dup_te <- group_by(mac# Summarize target class distributions
-rotopic_id_tst, id) %>% filter(n() > 1)
+dup_te <- group_by(macrotopic_id_tst, id) %>% filter(n() > 1)
 # Rimuovi duplicati
 macrotopic_trn <- macrotopic_id_trn[-which(macrotopic_id_trn$id %in% dup_tr$id),]
 macrotopic_tst <- macrotopic_id_tst[-which(macrotopic_id_tst$id %in% dup_te$id),]
@@ -126,7 +125,7 @@ test_df$id <- NULL
 # Summarize target class distributions
 print(summarize_distribution(train_df, macroTopic = F))
 print(summarize_distribution(test_df, macroTopic = F))
-# If we want to use macro_topic with six classes take the step below
+# If we want to use macro_topic
 train_df$Topic <- train_df$Topic_macro
 test_df$Topic  <- test_df$Topic_macro
 
@@ -147,56 +146,4 @@ text_representation <- wanted_matrix_type
 sparsity <- wanted_sparsity_value 
 
 save(list = c("train_df", "test_df", "text_representation", "sparsity"), 
-     file = paste0(folder, "Data/preprocessed.Rdata"))
-
-
-metric <- "Accuracy"
-
-# Allow parallel processing
-cl <- makePSOCKcluster(5)
-registerDoParallel(cl)
-# Classifiers
-nn_model <- train_nn_classifier(train_df, metric, control)  
-dt_model <- train_dt_classifier(train_df, metric, control)
-svm_model <- train_svm_classifier(train_df, metric, control)
-rf_model <- train_rf_classifier(train_df, metric, control)
-knn_model <- train_knn_classifier(train_df, metric, control)
-
-results <- resamples(list(DecisionTree = dt_model, 
-                          RandomForest = rf_model, 
-                          SVM = svm_model, 
-                          KNN = knn_model,
-                          NeuralNetwork = nn_model))
-# summarize the distributions
-summary(results)
-# boxplots of results
-bwplot(results)
-# dot plots of results
-dotplot(results)
-
-# Test predictions
-dt_predictions <- predict(dt_model, newdata = test_df)
-dt_confusion_matrix <- confusionMatrix(table(dt_predictions, test_df$Topic))
-cat('Decision Tree test accuracy: ', unname(dt_confusion_matrix$overall[1]), '\n')
-
-svm_predictions <- predict(svm_model, newdata = test_df)
-svm_confusion_matrix <- confusionMatrix(table(svm_predictions, test_df$Topic))
-cat('SVM test accuracy: ', unname(svm_confusion_matrix$overall[1]), '\n')
-
-knn_predictions <- predict(knn_model, newdata = test_df)
-knn_confusion_matrix <- confusionMatrix(table(knn_predictions, test_df$Topic))
-cat('KNN test accuracy: ', unname(knn_confusion_matrix$overall[1]), '\n')
-
-rf_predictions <- predict(rf_model, newdata = test_df)
-rf_confusion_matrix <- confusionMatrix(table(rf_predictions, test_df$Topic))
-cat('Random Forest test accuracy: ', unname(rf_confusion_matrix$overall[1]), '\n')
-
-nn_predictions <- predict(nn_model, newdata = test_df)
-nn_confusion_matrix <- confusionMatrix(table(nn_predictions, test_df$Topic))
-cat('Neural Networks test accuracy: ', unname(nn_confusion_matrix$overall[1]), '\n')
-
-
-#results_bigramTfIdf_0.99sparsity <- results
-save(list = c("results"),
-     file = paste0(folder, "Data/results_1_acc.RData"))
-
+     file = paste0(folder, "Data/preprocessed.RData"))
