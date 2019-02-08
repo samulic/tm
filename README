@@ -2,21 +2,21 @@ Text Mining and Search project
 
 ### FOLDER'S STRUCTURE ###
 Root
---Plots/				# Folder for wordclouds and models' performance plots
---Data/				# Data folder
+--Plots	# Folder for wordclouds and models' performance plots
+--Data	# Data folder
 ----preprocessed.RData	# Output df from file '2_preprocessing.R' with unique combination of matrix type and sparsity
-					# to be fed into '3_models.R'
+	# to be fed into '3_models.R'
 ----20news-bydate-test/	# Newsarticles from the test set
 ----20news-bydate-train/# Newsarticles from the train set
-------alt.atheism/		# Topic folder
---------doc_id			# Single document file referenced by id 
-------rec.autos/		# Topic folder (one of the 20)
-------sci.crypt/			# Topic folder
+------alt.atheism/	# Topic folder
+--------doc_id	# Single document file referenced by id 
+------rec.autos/	# Topic folder (one of the 20)
+------sci.crypt/		# Topic folder
 --0_helperFunctions.R	# Script with various functions to preprocess and to build different text representation matrixes
 --helperFunctions.RData	# Rdata that contains all the functions above used further on (just to simplify code estetic)
---1_exploration.R		# Explore different text representations and sparsity threshold through word clouds
+--1_exploration.R	# Explore different text representations and sparsity threshold through word clouds
 --2_preprocessing.R	# Build dataframe with target/topic variable included, ready to be used for model training
---3_models.R			# Models bulding with caret
+--3_models.R		# Models bulding with caret
 
 
 ### LIBRARIES ###
