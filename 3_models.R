@@ -68,6 +68,10 @@ control <- trainControl(method = "cv", number = 5, classProbs = TRUE,
                         summaryFunction = twoClassSummary) # for ROC metric
 metric <- "ROC" #"Accuracy" alternatively
 
+save(list = c("control", "metric", "train_nn_classifier",
+              "train_dt_classifier", "train_dt_classifier",
+              "train_knn_classifier", "train_svm_classifier"),
+     file = paste0(folder, "Data/models_declaration.RData"))
 # Classifiers
 nn_model <- train_nn_classifier(train_df, metric, control)
 dt_model <- train_dt_classifier(train_df, metric, control)
