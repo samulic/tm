@@ -2,9 +2,10 @@ library(tm) # https://cran.r-project.org/web/packages/tm/tm.pdf
 library(stringi)
 library(dplyr)
 library(data.table)
-library(doParallel)
+
 
 folder <- "Project/"
+source(paste0(folder, "0_helper_functions.R")) # load functions
 load(paste0(folder, "Data/dataList.RData"))
 # Read corpus from filesystem
 corpus_tr <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-train/"), recursive = TRUE),
@@ -20,8 +21,6 @@ corpus_te <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-test/"), recur
 #                               startsWith(df$Topic, "rec") ~ "Rec",
 #                               startsWith(df$Topic, "misc") ~ "Misc.forsale",
 #                               TRUE ~ "Religion") # altrimenti in tutti gli altri casi ~ 'religione'
-#   # Important !
-#   # merge duplicate docs under the same topic
 #   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
 #   return(df_macrotopic)
 # }
@@ -31,16 +30,14 @@ create_idtopic <- function(df) {
   # Important !
   # merge duplicate docs under the same topic
   df_macrotopic <- group_by(df, Topic_macro, Topic, id) %>% summarise()
-  return(df_macrotopic)
+  return(df)
 }
 
 # PRE_PREPROCESS dataframes
-tr <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_train$doc_id),
-                                                    split = "/"))),
-               c("Topic", "path", "id"))
-te <- setNames(data.frame(do.call("rbind", strsplit(gsub(".txt", "", dataList_test$doc_id),
-                                                    split = "/"))),
-               c("Topic", "path", "id"))
+tr <- setNames(data.frame(do.call("rbind", strsplit(dataList_train$doc_id, split = "/"))),
+               c("Topic", "localdir", "id"))
+te <- setNames(data.frame(do.call("rbind", strsplit(dataList_test$doc_id, split = "/"))),
+               c("Topic", "localdir", "id"))
 tr$Topic <- as.character(tr$Topic)
 te$Topic <- as.character(te$Topic)
 
@@ -65,8 +62,7 @@ trn_df <- merge(macrotopic_id_trn, id_text_tr, by = "id") %>% rename(doc_id = id
 tst_df <- merge(macrotopic_id_tst, id_text_te, by = "id") %>% rename(doc_id = id) %>%
   group_by(doc_id, Topic, Topic_macro) %>% summarise(text = first(text))
 
-### START HERE ! ###
-load("Project/helper_functions.RData")
+## START ##
 # Training set preprocessing
 print("Training Set preprocessing...")
 train_set <- preprocess_dataset(corpus_tr)
@@ -78,18 +74,17 @@ test_set <- preprocess_dataset(corpus_te)
 # Possible values:  binary, bigram_binary, tf, bigram_tf, tfidf, bigram_tfidf
 wanted_matrix_type <- "tfidf"
 wanted_sparsity_value <- 0.99
-wanted_verbose <- FALSE
 
 train_matrix <- create_matrix(train_set, 
                               wanted_matrix_type, 
                               wanted_sparsity_value, 
-                              wanted_verbose)
+                              wanted_verbose = F)
 test_matrix <- create_matrix(test_set, 
                              wanted_matrix_type, 
                              wanted_sparsity_value, 
-                             wanted_verbose)
+                             wanted_verbose = T)
 
-# Create intersection dataframes and label them
+# Create intersection dataframes
 train_df <- find_intersection_and_create_dataframe(train_matrix, test_matrix)
 test_df <- find_intersection_and_create_dataframe(test_matrix, train_matrix)
 # Change id to be equal to rownames of the df, which are the ids
@@ -116,8 +111,8 @@ dup_te_df <- group_by(test_df, id, Topic_macro) %>% filter(n() > 1)
 train_df <- train_df[-which(train_df$id %in% dup_tr_df$id),]
 test_df  <- test_df[-which(test_df$id %in% dup_te_df$id),]
 # Any null?
-any(is.na(train_df$Topic_macro))
-any(is.na(test_df$Topic_macro))
+print(c("Missing topics? :", any(is.na(train_df$Topic_macro)) ||
+        any(is.na(test_df$Topic_macro))))
 # Remove id, not needed anymore
 train_df$id <- NULL
 test_df$id <- NULL
@@ -125,19 +120,9 @@ test_df$id <- NULL
 # Summarize target class distributions
 print(summarize_distribution(train_df, macroTopic = F))
 print(summarize_distribution(test_df, macroTopic = F))
-# If we want to use macro_topic
+# If we want to use macro_topic, overwrite in Topic which is target class name
 train_df$Topic <- train_df$Topic_macro
 test_df$Topic  <- test_df$Topic_macro
-
-# At this point we have collinear Topic column at different level of granularity
-# as a consequence we also have duplicates
-# so we need to group by id and desired column of Topic which will
-#n_occur_tr <- data.frame(table(train_df$id))
-#n_occur_te <- data.frame(table(test_df$id))
-#duplicated_tr <- train_df[train_df$id %in% n_occur_tr$Var1[n_occur_tr$Freq > 1],
-#                          c("Topic_macro", "id")]
-#duplicated_te <- test_df[test_df$id %in% n_occur_te$Var1[n_occur_te$Freq > 1],
-#                          c("Topic_macro", "id")]
 
 train_df$Topic_macro <- NULL
 test_df$Topic_macro  <- NULL
