@@ -4,12 +4,13 @@ library("dplyr")
 library("wordcloud2")
 library("htmlwidgets")
 library("webshot")
-### WORD CLOUD EXPLORATION ###
+
+### Exploration with word clouds ###
 
 folder <- "Project/" # root project folder
 
 # load function to build different representation matrixes
-load(paste0(folder, "helper_functions.RData")) 
+load(paste0(folder, "0_helperFunctions.R")) 
 
 # load training and test data 
 corpus_tr <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-train/"), recursive = TRUE),
