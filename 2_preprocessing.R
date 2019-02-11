@@ -5,7 +5,7 @@ library(data.table)
 
 
 folder <- "Project/"
-source(paste0(folder, "0_helper_functions.R")) # load functions
+source(paste0(folder, "0_helperFunctions.R")) # load functions
 load(paste0(folder, "Data/dataList.RData"))
 # Read corpus from filesystem
 corpus_tr <- VCorpus(DirSource(paste0(folder, "Data/20news-bydate-train/"), recursive = TRUE),
